@@ -51,7 +51,7 @@ jobs:
       - name: Install pinned tools
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install ansible-core==2.20.1 ansible-lint==26.1.1 yamllint==1.37.1
+          "$RUNNER_TEMP/venv/bin/pip" install ansible-core==2.20.1 ansible-lint==26.1.1 yamllint==1.38.0
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: yamllint .
       - run: ansible-galaxy collection install -r requirements.yml
