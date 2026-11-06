@@ -78,3 +78,5 @@ Limits of these results:
 ## AI usage
 
 I used Claude Code as a pair throughout: for drafting code and answers, checking facts against vendor docs, running scanners and running the lab tests. I reviewed the output and can explain the decisions. The real apply and the lab runs produced the findings above.
+
+Answer 1.2 (Confluent Cloud on GCP over Private Service Connect) was generated with AI, including the concepts as well as the wording. It was not tested against a real PSC setup.

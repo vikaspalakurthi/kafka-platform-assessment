@@ -5,7 +5,7 @@
 A producer writes with `acks=all`. Topic has RF=3 and `min.insync.replicas=2`.
 
 **What does `acks=all` actually wait for?**
-acks=all actually wait for acknowledgement from all the partitions that are part of ISR. and min.insync.replicas is the minimum required partitions for the writes to go through. (leader will refuse the write if min is not satsified.)
+acks=all actually wait for acknowledgement from all the replicas that are part of ISR. and min.insync.replicas is the minimum required replicas for the writes to go through. (leader will refuse the write if minimum is not satisfied.)
 
 
 **What happens when one broker holding a replica goes offline?**
@@ -13,17 +13,17 @@ as long as the min.insync.replicas are there, writes continues.
 when a broker holding a follower goes down, after the lag timeout, leader sends a request to controller to update the ISR, controller validates the request and provides approval (epochs), 
 when a broker holding a leader goes down, 
 controller elects a new leader. 
-No data is lost (for a 3 broker 3 replica scenario)
+No acknowledged data is lost (for a 3 broker 3 replica scenario)
 Partitions does show as under-replicated. 
 
 
 **What happens when two brokers go offline?**
-since min insync is 2 and we have 3 brokers, not more than 1 copy of a partition, writes get retries until deliver.timeout.ms, 
+since min insync is 2 and we have 3 brokers, when 2 brokers go offline, the ISR count drops to 1. So the writes get retries until delivery.timeout.ms, 
 reads still work but only leader serves the requests. leader will send code 19 NOT_ENOUGH_REPLICAS until the ISR count is back to 2. producer can handle after the delivery timeout based on the app design. 
 
 when the older leader broker comes back, it decides if it needs to truncate (based on diverging leader epoch) and then tries to catch after getting the new leader info and once ISR gets updated, writes can resume. 
 
-when the older follower comes back, same determines if its consistent with new leader, mostly just catches up and then the ISR request by leader goest to controller. (this is where partition epoch gets used to validate the latest version of the partitions' metadata)
+when the older follower comes back, same determines if its consistent with new leader, mostly just catches up and then the ISR request by leader goes to controller. (this is where partition epoch gets used to validate the latest version of the partitions' metadata)
 
 **Why is `min.insync.replicas=2` (not 3) a common choice?**
 We aim for availability and also fault tolerance, if we have 3, any 1 broker going down will affect the writes. hence 2. 
@@ -88,7 +88,7 @@ Producer p99 latency jumped from 30 ms to ~400 ms. Throughput is unchanged. Brok
 
 **Give 4 likely causes, ranked most-to-least likely. For each cause, name one metric or one log line you would check.**
 
-CPU is flat, Throughput unchaged, -> so no extra work, but still latency increased for p99. That means requests are waiting on something, and only p99 moving points to one slow component or intermittent stalls. I would start with the Produce time breakdown in `kafka.network:type=RequestMetrics`, because it shows which stage the time is going to, and check whether it's one broker or all of them.
+CPU is flat, Throughput unchanged, -> so no extra work, but still latency increased for p99. That means requests are waiting on something, and only p99 moving points to one slow component or intermittent stalls. I would start with the Produce time breakdown in `kafka.network:type=RequestMetrics`, because it shows which stage the time is going to, and check whether it's one broker or all of them.
 
 1. **Slow follower or replication path.** `acks=all` is only as fast as the slowest ISR member, and waiting uses no CPU. Check `RemoteTimeMs` for request=Produce.
 2. **Disk latency on a broker.** Blocked writes use no CPU and hit the tail first. Check `LocalTimeMs` for request=Produce, and `await` in `iostat -x 1`.
@@ -112,7 +112,7 @@ jstat -gcutil "$(jps | awk '/Kafka/ {print $1}')" 1000 10
 Someone ran an Ansible play that restarted 3 of 6 brokers at the same time (`serial: 3`) to change a `server.properties` value. There were no health checks. After the play, several partitions show `UnderReplicatedPartitions > 0`.
 
 **Why is `serial: 3` unsafe here?**
-serial: 3 is unsafe when Replication factor is 3 and min.insync.replicas=2 as given. For this scenario, with serial: 3, ansible tries to update exactly 3 brokers at the same time. so there could be a scenario, the whole partition goes down. which causes downtime and write failures. and also 2 replicas go down and still < min.insync replicas. with min.insync.replicas 2 and replication factor 3, our safe bet is serial: 1 no matter the number of brokers in the cluster. 
+serial: 3 is unsafe when Replication factor is 3 and min.insync.replicas=2 (assumed from 1.1). For this scenario, with serial: 3, ansible tries to update exactly 3 brokers at the same time. so there could be a scenario, the whole partition goes down. which causes downtime and write failures. and also 2 replicas go down and still < min.insync replicas. with min.insync.replicas 2 and replication factor 3, our safe bet is serial: 1 no matter the number of brokers in the cluster. 
 
 
 **Name 3 safety checks the play should include.**
@@ -121,7 +121,7 @@ serial: 3 is unsafe when Replication factor is 3 and min.insync.replicas=2 as gi
 
 2. After each restart, wait for the broker to rejoin and for under replicated partitions to go back to 0 before moving on. -> basically wait for everything to be good. 
 
-3. for our 3 broker and min.insync.replicas: 2 scenario, use serial: 1 with any_errors_fata: true, so one failed check can stop the whole rollout.  
+3. for our 6 broker and min.insync.replicas: 2 scenario, use serial: 1 with any_errors_fatal: true, so one failed check can stop the whole rollout. (rf:3, min.insync.replicas: 2, affordable fault tolerance is 1, hence serial: 1)
 
 **List the recovery steps in order.**
 
@@ -133,7 +133,7 @@ serial: 3 is unsafe when Replication factor is 3 and min.insync.replicas=2 as gi
    kafka-topics --bootstrap-server $B --describe --under-min-isr-partitions
    kafka-topics --bootstrap-server $B --describe --unavailable-partitions
    ```
-3. **Get all 6 brokers up.** If one failed to start, read its logs and revert the config if that's the cause. Log recovery can take time after an unclean stop, so I wouldn't restart it again partway through.
+3. **Get the 3 restarted brokers back up.** If one failed to start, read its logs and revert the config if that's the cause. Log recovery can take time after an unclean stop, so I wouldn't restart it again partway through. Confirm all 3 rejoined so all 6 are online.
 
 4. **Fix offline partitions first,** because those are the actual outage. Bring back the brokers holding their replicas, and don't use unclean leader election unless the business accepts the data loss.
 
@@ -149,7 +149,7 @@ serial: 3 is unsafe when Replication factor is 3 and min.insync.replicas=2 as gi
 ## 1.5 ZooKeeper vs KRaft
 
 **What role does ZooKeeper play in a Kafka cluster that uses it?**
-Zookeeper is like a seperate service that used for holding the cluster metadata, (broker membership, topic configs, ACLs...) and its used to elect the controller. -> main purpose. 
+Zookeeper is like a separate service that used for holding the cluster metadata, (broker membership, topic configs, ACLs...) and its used to elect the controller. -> main purpose. 
 
 
 **What replaces ZooKeeper in a KRaft cluster?**
