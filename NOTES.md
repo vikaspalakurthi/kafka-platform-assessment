@@ -1,5 +1,13 @@
 # Notes
 
+## How this was validated
+
+| Part | Tested against | Result |
+|---|---|---|
+| Terraform | Real Confluent Cloud resources: an environment with Schema Registry Essentials, a Basic cluster on GCP `us-central1`, `orders.v1`, two service accounts and the producer ACLs | `terraform apply` succeeded, and `terraform plan` came back clean afterwards |
+| Ansible | Kafka 4.1.0 in a local 3-node Docker cluster, not production servers | Real rolling restarts under a live `acks=all` producer, with all 40,000 records present. Failure tests are in `ansible/README.md` |
+| `lag_report.py` | The same Docker cluster, plus real Confluent Cloud for the login failure path | Lag matched `kafka-consumer-groups`, all 8 broker kill tests gave correct results, and a wrong key on Confluent Cloud exited 1 with a clear message |
+
 ## Terraform decisions
 
 - **Second service account.** The brief asks for one service account, and `producer` is that account. Creating topics and ACLs needs a Kafka API key with admin rights, so I added `manager` for Terraform only. Without it, the producer would need admin rights, which defeats least privilege.
@@ -59,7 +67,7 @@ Known limit: only partitions with a committed offset are listed. A group that co
 | `ruff`, `mypy`, `bandit`, `pip-audit`, `pytest` | The Python script and its dependency |
 | `actionlint` | The CI workflow (run locally) |
 
-These run in `.github/workflows/ci.yml` and `.pre-commit-config.yaml`, except `actionlint`. Tools, images and actions are pinned to exact versions, and actions are pinned to commit SHAs.
+All of these except `actionlint` run in `.github/workflows/ci.yml`, and `.pre-commit-config.yaml` runs a faster subset before each commit. Tools, images and actions are pinned to exact versions, and actions are pinned to commit SHAs.
 
 Limits of these results:
 
