@@ -1,0 +1,8 @@
+---
+- name: Roll a server.properties change across the brokers
+  hosts: kafka_brokers
+  serial: 1  # One broker at a time: RF=3 with min.insync.replicas=2 tolerates one down.
+  any_errors_fatal: true  # Any failure ends the rollout; no further broker is touched.
+  gather_facts: false  # Nothing here uses facts, so skip the extra work per host.
+  roles:
+    - kafka

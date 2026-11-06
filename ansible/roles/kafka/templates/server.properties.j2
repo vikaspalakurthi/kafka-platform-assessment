@@ -1,0 +1,5 @@
+# Managed by Ansible. Manual edits are overwritten on the next run.
+{% for key, value in kafka_properties | dictsort %}
+{{ key }}={{ value }}
+{% endfor %}
+num.replica.fetchers={{ kafka_num_replica_fetchers }}

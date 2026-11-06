@@ -1,0 +1,16 @@
+---
+# Shared by both health checks, so they always reach the cluster the same way.
+kafka_client_args: >-
+  --bootstrap-server {{ kafka_bootstrap_servers }}
+  {{ '--command-config ' ~ kafka_client_config if kafka_client_config else '' }}
+
+# A failed command fails the task, so "cannot reach the cluster" is never read
+# as "0 under-replicated". Only stdout is counted: tools may warn on stderr.
+kafka_urp_command: >-
+  {{ kafka_bin_dir }}/kafka-topics.sh {{ kafka_client_args }}
+  --describe --under-replicated-partitions
+
+# KRaft only. Reports the current quorum leader, which is the active controller.
+kafka_quorum_command: >-
+  {{ kafka_bin_dir }}/kafka-metadata-quorum.sh {{ kafka_client_args }}
+  describe --status

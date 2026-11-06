@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars, which is gitignored. Credentials never go here:
+# they come from CONFLUENT_CLOUD_API_KEY and CONFLUENT_CLOUD_API_SECRET.
+name_prefix = "orders-dev"
+cloud       = "GCP"
+region      = "us-central1"

@@ -1,0 +1,119 @@
+---
+# Order matters here. Health is checked before the config is written, so a
+# refused rollout leaves the broker untouched. A handler would write first, and
+# after a failed check the next run would see "no change" and never restart.
+
+# The template owns the whole file, so a missing setting would be deleted from it.
+- name: Refuse a config that is missing required broker settings
+  ansible.builtin.assert:
+    that: kafka_required_properties | difference(kafka_properties.keys() | list) | length == 0
+    fail_msg: >-
+      kafka_properties must set {{ kafka_required_properties | join(', ') }}.
+      Not rendering server.properties for {{ inventory_hostname }}.
+    quiet: true
+
+- name: Check for a restart left unfinished by an earlier run
+  ansible.builtin.stat:
+    path: "{{ kafka_restart_marker }}"
+  become: "{{ kafka_become }}"
+  register: kafka_marker
+
+# diff is off by default because server.properties can hold passwords.
+- name: Compare the rendered config with the file on disk (writes nothing)
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ kafka_config_path }}"
+    owner: "{{ kafka_config_owner }}"
+    group: "{{ kafka_config_group }}"
+    mode: "0640"
+  become: "{{ kafka_become }}"
+  check_mode: true
+  diff: "{{ kafka_show_diff }}"
+  register: kafka_config_preview
+
+# No rescue on purpose: a failure must stop the rollout, and the marker makes
+# the next run finish the job. Rescuing here could hide a half-done restart.
+- name: Apply the change and restart this broker
+  when: kafka_config_preview is changed or kafka_marker.stat.exists
+  block:
+    # The read-only checks run unprivileged, and a dry run tests them too.
+    - name: Check the controller quorum has a leader
+      ansible.builtin.command:
+        cmd: "{{ kafka_quorum_command }}"
+      register: kafka_quorum
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse to continue without an active controller
+      ansible.builtin.assert:
+        that: kafka_quorum.stdout is regex('LeaderId:\s+\d+')
+        fail_msg: No active controller. Not changing {{ inventory_hostname }}.
+        quiet: true
+
+    - name: Count under-replicated partitions before touching this broker
+      ansible.builtin.command:
+        cmd: "{{ kafka_urp_command }}"
+      register: kafka_urp_before
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse to continue unless under-replicated partitions is 0
+      ansible.builtin.assert:
+        that: kafka_urp_before.stdout_lines | length == 0
+        fail_msg: >-
+          {{ kafka_urp_before.stdout_lines | length }} under-replicated
+          partition(s). Not changing {{ inventory_hostname }}.
+        success_msg: Under-replicated partitions is 0.
+
+    # Written before the config, so a failure from here on is retried next run.
+    - name: Record that this broker owes a restart
+      ansible.builtin.file:
+        path: "{{ kafka_restart_marker }}"
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+        mode: "0640"
+      become: "{{ kafka_become }}"
+
+    - name: Write server.properties
+      ansible.builtin.template:
+        src: server.properties.j2
+        dest: "{{ kafka_config_path }}"
+        owner: "{{ kafka_config_owner }}"
+        group: "{{ kafka_config_group }}"
+        mode: "0640"
+        backup: true
+      become: "{{ kafka_become }}"
+      diff: "{{ kafka_show_diff }}"
+
+    - name: Restart the broker
+      ansible.builtin.command:
+        cmd: "{{ kafka_restart_command }}"
+      become: "{{ kafka_become }}"
+      delegate_to: "{{ 'localhost' if kafka_restart_on_controller else inventory_hostname }}"
+      changed_when: true
+
+    - name: Wait for the broker port
+      ansible.builtin.wait_for:
+        host: "{{ kafka_port_host }}"
+        port: "{{ kafka_port }}"
+        timeout: "{{ kafka_port_timeout }}"
+      when: not ansible_check_mode
+
+    # An open port only means the process is up. The next broker must not start
+    # until this one is back in the ISR for every partition it hosts.
+    - name: Wait for under-replicated partitions to return to 0
+      ansible.builtin.command:
+        cmd: "{{ kafka_urp_command }}"
+      register: kafka_urp_after
+      changed_when: false
+      retries: "{{ kafka_urp_retries }}"
+      delay: "{{ kafka_urp_delay }}"
+      until: kafka_urp_after.rc == 0 and kafka_urp_after.stdout_lines | length == 0
+      when: not ansible_check_mode
+
+    - name: Clear the restart marker
+      ansible.builtin.file:
+        path: "{{ kafka_restart_marker }}"
+        state: absent
+      become: "{{ kafka_become }}"

@@ -1,0 +1,2 @@
+# LF everywhere: a CRLF entrypoint.sh would break the lab container.
+* text=auto eol=lf

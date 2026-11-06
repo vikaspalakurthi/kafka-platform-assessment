@@ -1,0 +1,5 @@
+---
+# Only the Docker lab needs this. The role itself uses ansible.builtin alone.
+collections:
+  - name: community.docker
+    version: 5.0.4

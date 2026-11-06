@@ -1,0 +1,40 @@
+---
+# The change this role exists to roll out.
+kafka_num_replica_fetchers: 4
+
+# All other broker settings. Set per environment and per host in the inventory.
+kafka_properties: {}
+# The role fails unless these are set, because the template owns the whole file.
+kafka_required_properties:
+  - listeners
+  - log.dirs
+
+# Privilege is used per task, only where root is needed: the config and restart.
+kafka_become: true
+# Off by default: a diff prints the file, and it may hold passwords.
+kafka_show_diff: false
+
+kafka_config_path: /etc/kafka/server.properties
+kafka_config_owner: kafka
+kafka_config_group: kafka
+kafka_bin_dir: /opt/kafka/bin
+
+# Comma-separated, so the health check does not depend on this broker being up.
+kafka_bootstrap_servers: "localhost:9092"
+# Properties file for a secured cluster (SASL/TLS), passed as --command-config.
+kafka_client_config: ""
+
+kafka_restart_command: systemctl restart kafka
+# Set true where the restart must run on the control node (the Docker lab).
+kafka_restart_on_controller: false
+
+kafka_port_host: 127.0.0.1
+kafka_port: 9092
+kafka_port_timeout: 120
+
+# How long a restarted broker has to catch up: retries x delay = 5 minutes.
+kafka_urp_retries: 30
+kafka_urp_delay: 10
+
+# Exists only while a restart is owed. See tasks/main.yml.
+kafka_restart_marker: "{{ kafka_config_path }}.restart-pending"

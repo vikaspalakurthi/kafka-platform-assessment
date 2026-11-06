@@ -1,0 +1,12 @@
+# State contains API key secrets in plain text; never commit it.
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Local values and provider binaries
+*.tfvars
+*.tfvars.json
+.terraform/
+
+# .terraform.lock.hcl is deliberately committed: it pins provider checksums.

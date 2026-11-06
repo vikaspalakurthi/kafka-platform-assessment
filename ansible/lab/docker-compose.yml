@@ -1,0 +1,32 @@
+---
+# Three combined broker/controller nodes in KRaft mode. Ports stay on the
+# compose network, because Ansible and the Kafka tools run inside the containers.
+x-broker: &broker
+  build: .
+  image: kafka-rolling-lab:4.1.0
+  environment: &env
+    CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qg  # Lab-only identifier, not a secret.
+    KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+
+services:
+  kafka1:
+    <<: *broker
+    container_name: kafka1
+    hostname: kafka1
+    environment:
+      <<: *env
+      NODE_ID: "1"
+  kafka2:
+    <<: *broker
+    container_name: kafka2
+    hostname: kafka2
+    environment:
+      <<: *env
+      NODE_ID: "2"
+  kafka3:
+    <<: *broker
+    container_name: kafka3
+    hostname: kafka3
+    environment:
+      <<: *env
+      NODE_ID: "3"
